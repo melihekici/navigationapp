@@ -53,7 +53,7 @@ POST "/navigation"
 body: {"vehicle": vehicle id, "datetime": "2021-08-28 17:25:33", "latitude": float, "longitude":float}  
 * Adds a navigation record to the database.  
 
-PUT "/navigation"
+PUT "/navigation"  
 body: {"id": navigation record id, "vehicle": vehicle id, "datetime": "2021-08-28 17:25:33", "latitude": float, "longitude":float}  
 * Update a navigation record.  
   
