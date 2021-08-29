@@ -74,37 +74,37 @@ Aim: A method to get data from database more efficiently.
   
 Suggestion:  
 Instead of calculating the last 48 hours of records by filtering datetimes with query every time  
-that the api is called, we can create day ids (Ex:incrementing day number starting from first  
-records day) and cache(or save to a db) the id of the first navigation record for that day.  
+that the api is called, we can use caching.  
+  
+I have created a cache for the last points data for each hour interval except the last hour.  
   
 When you send a request to the api for the last 48 hours (or last n hours) of records,  
-first, the day number for the 48 hours (or n hours) earlier will be calculated   
-(lets say it returned day 410) before querying the database.  
-
-Then using the time stamp(410) we will get the id of the first record for that day from the cache (or db).  
-After, we will filter the navigation records that has id greater than returned id from the cache.  
-(Assuming later records have greater id(primary key) value).  
+first, the results for the 47 hours (or n-1 hours) will be get from the cache without querying the database.  
   
-If you have asked for last 48 hours of records, this would return from last 48 hours up to last 72 hours of records. 
-Then we can filter the records inside api function and return last 48 hours of records.    
+Then the query to get last points for the last hour is executed.  
+I have decided not to cache the last one hour because there might be new records.  
   
-I think slicing data from database using id field (which is the primary key) would be much faster and cheaper  
-than filtering a whole data by comparison of date time with now.  
+I have decided to cache the queries with 1 hour intervals but this can be changed within the code quite easily.  
+I also have prepared two end-points for you:  
+* One to perform caching automatically.  
+* Another for optimized data fetching.
   
-
+  
 ## Last Points Api with cache  
 I have wrote a function to make caching for you.  
-First you need to send get request to the "/cache-dates" end-point.  
+First you need to send a GET request to the "/cache-dates" end-point.  
   
 GET "/cache-dates"  
-* This will create a caching which shows a first navigation record for each day.  
+* This will create a caching which keeps query results for 1 hour intervals staring from smallest datetime record.   
   
-After caching the dates is completed, you can use "/last-points-cache/{n}" end-point to get last points in optimized way.  
+After caching the dates is completed, you can use "/last-points-cache/{n}" end-point to get last points in n hours in optimized way.  
   
 GET "/last-points-cache"
 * This will return the same list with "last-points" end-point but this one uses the Suggested caching method before getting data from database.  
-* This will filter the database on primary key, not on datetime.  
-* You need to run cache-dates before using this end-point.
+* This will only query the last hour from database and get other data from cache.    
+* You need to run cache-dates before using this end-point.   
+  
+With a small set of data(i have posted around 1000 data to database) optimized query will cause ~7 ms execution time on database, while not optimized version causing ~60ms execution time.
 
 
   
