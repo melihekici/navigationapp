@@ -15,5 +15,5 @@ urlpatterns = [
     url(r"^cache-dates$", views.CacheDates),
     
     url(r"^last-points-cache$", views.LastPointsWithCache),
-    url(r"^last-points-cache/([0-9]+)$", views.LastPointsWithCache)
+    url(r"^last-points-cache/([0-9]+)$", views.LastPointsWithCache),
 ]

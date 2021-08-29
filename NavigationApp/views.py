@@ -5,14 +5,21 @@ from rest_framework.parsers import JSONParser
 from django.http.response import JsonResponse
 import datetime
 from django.core.cache import cache
+import logging
 
 from NavigationApp.models import NavigationRecord, Vehicle
 from NavigationApp.serializers import LastPointsSerializer, NavigationRecordSerializer, VehicleSerializer
 
 # Create your views here.
 
+def setup_logger():
+    l = logging.getLogger('django.db.backends')
+    l.setLevel(logging.DEBUG)
+    l.addHandler(logging.StreamHandler())
+
 @csrf_exempt
 def vehicleApi(request, id=0):
+    setup_logger()
     if request.method == "GET":
         vehicles = Vehicle.objects.all()
         vehicles_serializer = VehicleSerializer(vehicles, many=True)
@@ -39,6 +46,7 @@ def vehicleApi(request, id=0):
 
 @csrf_exempt
 def NavigationApi(request, id=0):
+    setup_logger()
     if request.method == "GET":
         navRecord = NavigationRecord.objects.all()
         navRecord_serializer = NavigationRecordSerializer(navRecord, many=True)
@@ -67,6 +75,7 @@ def NavigationApi(request, id=0):
 
 @csrf_exempt
 def LastPointsApi(request, lastHours=24):
+    setup_logger()
     if request.method == "GET":
         time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=int(lastHours)) + datetime.timedelta(hours=3)
         query = NavigationRecord.objects.select_related().filter(datetime__gte=time_threshold)
@@ -80,34 +89,79 @@ def LastPointsApi(request, lastHours=24):
 
 @csrf_exempt
 def CacheDates(request):
+    setup_logger()
     if request.method == "GET":
-        query = NavigationRecord.objects.all()
-        records = list(query.values('id', 'datetime'))
-        for record in records:
-            date = str(record['datetime'].date())
-            if date in cache:
-                continue
-            print(date)
-            cache.set(date, record["id"], None)
-        return JsonResponse("Date Indexes Are Cached.", safe=False)
+        record_time = NavigationRecord.objects.all().order_by('datetime').first().datetime
+        print(record_time)
+        record_time = record_time.replace(minute=0, second=0)
+        now = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) + datetime.timedelta(hours=3)
+        while record_time < now - datetime.timedelta(hours=1):
+            query = NavigationRecord.objects.select_related().filter(datetime__gte=record_time).filter(datetime__lt=record_time + datetime.timedelta(hours=1))
+            date = str(record_time.date()) + "-" + str(record_time.hour)
+            cache.set(date, list(query.values('latitude', 'longitude', 'vehicle__plate', 'datetime')))
+            record_time += datetime.timedelta(hours=1)
+
+        return JsonResponse("Queries are cached.", safe=False)
 
 @csrf_exempt
 def LastPointsWithCache(request, lastHours=24):
+    setup_logger()
     if request.method == "GET":
-        time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=int(lastHours)) + datetime.timedelta(hours=3)
-        print(str(time_threshold.date()))
-        starting_index = cache.get(str(time_threshold.date()))
-        if starting_index:
-            query = NavigationRecord.objects.select_related().filter(id__gte=starting_index)
-            lastPointsList = list(query.values('latitude', 'longitude', 'vehicle__plate', 'datetime'))
-            return_records = []
-            for record in lastPointsList:
-                if record['datetime'] > time_threshold:
-                    record['vehicle_plate'] = record['vehicle__plate']
-                    del record['vehicle__plate']
-                    return_records.append(record)
+        time_threshold_original = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=int(lastHours)) + datetime.timedelta(hours=3)
+        time_threshold = time_threshold_original.replace(minute=0, second=0)
+        now = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) + datetime.timedelta(hours=3)
+        results = []
+        print(time_threshold_original)
+
+        while time_threshold < now - datetime.timedelta(hours=1):
+            cache_key = str(time_threshold.date()) + "-" + str(time_threshold.hour)
+            if cache_key in cache:
+                results += cache.get(cache_key)
+            time_threshold += datetime.timedelta(hours=1)
+
+        # I prefer to get the last hour from database instead of cache.
+        query = NavigationRecord.objects.select_related().filter(datetime__gte=time_threshold)
+        results += list(query.values('latitude', 'longitude', 'vehicle__plate', 'datetime'))
             
-            lastPoints_serializer = LastPointsSerializer(return_records, many=True)
-            return JsonResponse(lastPoints_serializer.data, safe=False)
-        else:
-            return JsonResponse("No records found in cache.", safe=False)
+
+        results_copy = []
+        for res in results:
+            if res['datetime'] > time_threshold_original:
+                res['vehicle_plate'] = res['vehicle__plate']
+                del res['vehicle__plate']
+                results_copy.append(res)
+
+
+
+        lastPoints_serializer = LastPointsSerializer(results_copy, many=True)
+        return JsonResponse(lastPoints_serializer.data, safe=False)
+
+        # print(str(time_threshold.date()))
+        # starting_index = cache.get(str(time_threshold.date()))
+        # if starting_index:
+        #     # query = NavigationRecord.objects.select_related().filter(id__gte=starting_index)
+        #     query = NavigationRecord.objects.select_related().all()[starting_index::]
+        #     lastPointsList = list(query.values('latitude', 'longitude', 'vehicle__plate', 'datetime'))
+        #     return_records = []
+        #     for record in lastPointsList:
+        #         if record['datetime'] > time_threshold:
+        #             record['vehicle_plate'] = record['vehicle__plate']
+        #             del record['vehicle__plate']
+        #             return_records.append(record)
+            
+        #     lastPoints_serializer = LastPointsSerializer(return_records, many=True)
+        #     return JsonResponse(lastPoints_serializer.data, safe=False)
+        # else:
+        #     return JsonResponse("No records found in cache.", safe=False)
+
+# @csrf_exempt
+# def addrecs(request):
+#     # for i in range(10000):
+#     #     Vehicle.objects.create(plate=f"vehicle{i+21}")
+#     for i in range(1000):
+#         NavigationRecord.objects.create(
+#             vehicle=Vehicle.objects.get(id=i+28),
+#             datetime=datetime.datetime.now() - datetime.timedelta(minutes=3*i),
+#             latitude=11.11,
+#             longitude=21.12
+#         )
